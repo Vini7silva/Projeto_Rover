@@ -1,0 +1,91 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+// Configurações do WiFi (O ESP32 criará esta rede)
+const char* ssid = "CARRO_ESP32_S3";
+const char* password = "123456789";
+
+WebServer server(80);
+
+// --- PINAGEM ESP32-S3 ---
+const int M1_AIN1 = 1;  const int M1_AIN2 = 2;  
+const int M3_BIN1 = 4;  const int M3_BIN2 = 5;  
+const int M2_AIN1 = 6;  const int M2_AIN2 = 7;  
+const int M4_BIN1 = 15; const int M4_BIN2 = 16;
+
+void mover(int m1a, int m1b, int m2a, int m2b, int m3a, int m3b, int m4a, int m4b) {
+  digitalWrite(M1_AIN1, m1a); digitalWrite(M1_AIN2, m1b);
+  digitalWrite(M2_AIN1, m2a); digitalWrite(M2_AIN2, m2b);
+  digitalWrite(M3_BIN1, m3a); digitalWrite(M3_BIN2, m3b);
+  digitalWrite(M4_BIN1, m4a); digitalWrite(M4_BIN2, m4b);
+}
+
+// Interface HTML para controlo via Browser (Landscape)
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+  body { text-align:center; font-family: sans-serif; background: #121212; color: white; user-select: none; margin: 0; overflow: hidden; touch-action: none; }
+  .main-layout { display: flex; justify-content: space-between; align-items: center; height: 100vh; padding: 0 5%; }
+  .control-group { display: flex; flex-direction: column; align-items: center; }
+  .row { display: flex; align-items: center; justify-content: center; }
+  .btn { width: 90px; height: 90px; margin: 8px; border: none; border-radius: 50%; background: #333; color: white; font-size: 30px; font-weight: bold; box-shadow: 0 6px #000; cursor: pointer; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; }
+  .btn:active { background: #555; box-shadow: 0 2px #000; transform: translateY(4px); }
+  .btn-stop { background: #f44336; width: 70px; height: 70px; font-size: 18px; }
+  .btn-dir { background: #2196F3; } 
+  .btn-lat { background: #4CAF50; }
+  .label-center { position: absolute; top: 10px; width: 100%; font-size: 14px; opacity: 0.5; }
+</style></head>
+<body oncontextmenu="return false;">
+  <div class="label-center">ROVER S3 - MECANUM</div>
+  <div class="main-layout">
+    <div class="control-group">
+      <button class="btn" ontouchstart="cmd('F')" ontouchend="cmd('S')">▲</button>
+      <button class="btn" ontouchstart="cmd('B')" ontouchend="cmd('S')">▼</button>
+    </div>
+    <button class="btn btn-stop" onclick="cmd('S')">STOP</button>
+    <div class="control-group">
+      <div class="row">
+        <button class="btn btn-dir" ontouchstart="cmd('L')" ontouchend="cmd('S')">◀</button>
+        <button class="btn btn-dir" ontouchstart="cmd('R')" ontouchend="cmd('S')">▶</button>
+      </div>
+      <div class="row">
+        <button class="btn btn-lat" ontouchstart="cmd('X')" ontouchend="cmd('S')">«</button>
+        <button class="btn btn-lat" ontouchstart="cmd('Z')" ontouchend="cmd('S')">»</button>
+      </div>
+    </div>
+  </div>
+  <script>function cmd(dir) { fetch('/' + dir); }</script>
+</body></html>
+)rawliteral";
+
+void setup() {
+  Serial.begin(115200);
+  int p[] = {1, 2, 4, 5, 6, 7, 15, 16};
+  for(int i=0; i<8; i++) pinMode(p[i], OUTPUT);
+
+  // Configuração IP ESTÁTICO (Crítico para o App Inventor)
+  IPAddress local_ip(192, 168, 4, 1);
+  IPAddress gateway(192, 168, 4, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.softAPConfig(local_ip, gateway, subnet);
+
+  WiFi.softAP(ssid, password);
+  Serial.print("IP do Rover: "); Serial.println(WiFi.softAPIP());
+
+  // Rotas de Comando
+  server.on("/", []() { server.send(200, "text/html", index_html); });
+  server.on("/F", []() { mover(1,0,1,0,1,0,1,0); server.send(200); });
+  server.on("/B", []() { mover(0,1,0,1,0,1,0,1); server.send(200); });
+  server.on("/L", []() { mover(0,1,1,0,1,0,0,1); server.send(200); });
+  server.on("/R", []() { mover(1,0,0,1,0,1,1,0); server.send(200); });
+  server.on("/S", []() { mover(0,0,0,0,0,0,0,0); server.send(200); });
+  server.on("/X", []() { mover(0,1,0,1,1,0,1,0); server.send(200); }); // Lateral Esquerda
+  server.on("/Z", []() { mover(1,0,1,0,0,1,0,1); server.send(200); }); // Lateral Direita
+
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+}
